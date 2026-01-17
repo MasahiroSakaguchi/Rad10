@@ -13,7 +13,7 @@ Preferences preferences;
 
 // --- 状態変数 ---
 int currentVolume = 12;
-String currentStationName = "Waiting...";
+String currentCountry = "Waiting...";
 String currentStreamUrl = "";
 String wifiSSID = "";
 String wifiPass = "";
@@ -138,9 +138,42 @@ void inputWiFiConfig() {
 
 String fetchWorkingStation() {
     const char *tags[] = {
-        "pop", "rock", "jazz", "classical", "lofi", "chillout", "ambient", "piano", "80s", "oldies",
-        "japan", "anime", "jpop", "bollywood", "country", "blues", "celtic", "chanson", "disco",
-        "latino", "salsa", "bossa nova", "reggae", "hawaiian", "news", "soundtrack"
+        // --- Pop / Rock / Mainstream ---
+        "pop", "rock", "indie", "alternative", "classic rock", "hard rock", "metal",
+        "punk", "synthpop", "new wave", "disco", "funk", "soul", "rnb",
+        
+        // --- Jazz / Classical / Instrumental ---
+        "jazz", "classical", "piano", "instrumental", "blues", "smooth jazz", "swing",
+        "soundtrack", "movie", "orchestra", "opera",
+        
+        // --- Electronic / Dance / Mood ---
+        "lofi", "chillout", "ambient", "electronic", "house", "techno", "trance",
+        "dnb", "dubstep", "lounge", "meditation", "sleep", "study", "vaporwave",
+        
+        // --- Hip Hop / Reggae ---
+        "hiphop", "rap", "trap", "reggae", "dancehall", "ska", "dub",
+        
+        // --- Oldies / Decades ---
+        "oldies", "retro", "50s", "60s", "70s", "80s", "90s", "00s",
+        
+        // --- World / Regional / Folk ---
+        "folk", "country", "bluegrass", "celtic", "acoustic",
+        "latin", "salsa", "bachata", "reggaeton", "cumbia", "tango", "mariachi", // Latin America
+        "bossa nova", "samba", "mpb", // Brazil
+        "chanson", "french", // France
+        "flamenco", // Spain
+        "bollywood", "indian", // India
+        "kpop", // Korea
+        "jpop", "anime", "city pop", "enka", // Japan
+        "cantopop", // Hong Kong
+        "african", "afrobeat", // Africa
+        "arabic", // Middle East
+        "greek", // Greece
+        "irish", // Ireland
+        "polka", // Europe
+        
+        // --- Talk / News / Misc ---
+        "news", "talk", "sports", "comedy", "scanner" // Police/Fire scanner (Rare but exists)
     };
     int tagCount = sizeof(tags) / sizeof(tags[0]);
     int tagIndex = random(0, tagCount);
@@ -167,8 +200,25 @@ String fetchWorkingStation() {
         JsonDocument doc;
         DeserializationError error = deserializeJson(doc, http.getStream());
         if (!error && doc.size() > 0) {
+            int bitrate = doc[0]["bitrate"].as<int>();
+            
+            // ビットレート制限 (SRAMバッファでの安定再生のため、128kbps以下に限定)
+            // 0は不明な場合が多いが、念のため許可するか、あるいは安全側に倒してスキップするか。
+            // ここでは "128超え" を弾くことを主目的とする。
+            if (bitrate > 128) {
+                Serial.printf("Skipping high bitrate station: %d kbps\n", bitrate);
+                // 再帰呼び出しで別の局を探す (再接続コストがかかるが、高ビットレートで音切れするよりマシ)
+                // 無限ループ防止のため、リトライ回数制限などを入れたいところだが、
+                // 簡易的にそのまま再検索へ
+                http.end();
+                return fetchWorkingStation(); 
+            }
+
             foundUrl = doc[0]["url_resolved"].as<String>();
-            currentStationName = doc[0]["name"].as<String>();
+            currentCountry = doc[0]["country"].as<String>();
+            if (currentCountry == "null" || currentCountry.length() == 0) {
+                currentCountry = "Unknown Land";
+            }
         }
     }
     http.end();
@@ -184,12 +234,31 @@ void updateDisplay() {
     M5.Lcd.fillRect(0, 30, 240, 105, BLACK);
     M5.Lcd.setTextDatum(MC_DATUM);
     M5.Lcd.setTextColor(CYAN);
+    M5.Lcd.setTextSize(2); // 国名は大きく
+    
+    // 国名を装飾して表示
+    String name = ">> " + currentCountry + " <<";
+    // 長すぎる場合はカット
+    if (name.length() > 20) name = name.substring(0, 20) + "..";
+    
+    M5.Lcd.drawString(name, 120, 60); // 位置を少し上に調整
+
+    // オーディオ情報表示 (新規追加)
     M5.Lcd.setTextSize(1);
-    String name = currentStationName;
-    if (name.length() > 25) name = name.substring(0, 25) + "...";
-    M5.Lcd.drawString(name, 120, 70);
+    M5.Lcd.setTextColor(LIGHTGREY);
+    if (audio.isRunning()) {
+        M5.Lcd.setCursor(20, 85);
+        // 例: 44.1kHz  16bit  128Kbps
+        M5.Lcd.printf("%.1fkHz  %dbit  %dKbps", 
+            audio.getSampleRate() / 1000.0, 
+            audio.getBitsPerSample(), 
+            audio.getBitRate() / 1000
+        );
+    }
+
     M5.Lcd.setTextColor(YELLOW);
-    M5.Lcd.drawString(audio.isRunning() ? "Playing" : "Stopped", 120, 95);
+    M5.Lcd.setTextSize(1);
+    M5.Lcd.drawString(audio.isRunning() ? "Playing" : "Stopped", 120, 110); // 位置を少し下に調整
     M5.Lcd.setTextDatum(TL_DATUM);
 }
 
@@ -326,3 +395,18 @@ void loop() {
         playNewStation();
     }
 }
+
+// --- Audioコールバック ---
+void audio_info(const char *info) { 
+    Serial.print("info: "); Serial.println(info); 
+    // ビットレート等の情報が確定したら画面を更新
+    if (strstr(info, "BitRate") || strstr(info, "SampleRate")) {
+        updateDisplay();
+    }
+}
+void audio_showstation(const char *info) { 
+    // 国名表示を優先するため、ここでは画面更新しない
+    Serial.print("station: "); 
+    Serial.println(info); 
+}
+void audio_eof_mp3(const char *info) { Serial.print("eof_mp3: "); Serial.println(info); playNewStation(); }
