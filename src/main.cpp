@@ -533,6 +533,40 @@ void loop() {
     if (M5Cardputer.Keyboard.isKeyPressed('/')) {
         playNewStation();
     }
+
+    // --- ESCキー (Fn + `) 長押しでDeep Sleep (充電モード) へ ---
+    static unsigned long escPressStartTime = 0;
+    bool escPressed = false;
+
+    // Fn + ` (Backtick) を ESC として判定
+    if (M5Cardputer.Keyboard.isKeyPressed(KEY_FN) && M5Cardputer.Keyboard.isKeyPressed('`')) {
+        escPressed = true;
+    }
+
+    if (escPressed) {
+        if (escPressStartTime == 0) {
+            escPressStartTime = millis();
+        } else if (millis() - escPressStartTime > 2000) { // 2秒長押し
+            // 画面表示
+            M5.Lcd.fillScreen(BLACK);
+            M5.Lcd.setCursor(20, 50);
+            M5.Lcd.setTextColor(BLUE);
+            M5.Lcd.setTextSize(2);
+            M5.Lcd.println("Deep Sleep...");
+            delay(1000);
+
+            // ハードウェア終了処理
+            audio.stopSong();
+            digitalWrite(46, LOW); // Amp OFF
+            M5.Display.setBrightness(0); // 画面消灯
+            
+            // Deep Sleep開始
+            // 復帰はリセットボタン(電源ボタン)で行うため、ウェイクアップソースの設定は不要
+            esp_deep_sleep_start();
+        }
+    } else {
+        escPressStartTime = 0;
+    }
 }
 
 // --- Audioコールバック ---
