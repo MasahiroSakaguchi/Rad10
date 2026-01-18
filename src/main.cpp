@@ -5,11 +5,18 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <Audio.h>
-#include <Preferences.h> // NVS用ライブラリ
+#include <Preferences.h>
+#include <SD.h>
+#include <SPI.h>
 
 // --- グローバルオブジェクト ---
 Audio audio; 
 Preferences preferences;
+
+// --- 定数・設定 ---
+const char* ntpServer = "pool.ntp.org";
+const long  gmtOffset_sec = 0; // UTC
+const int   daylightOffset_sec = 0;
 
 // --- 状態変数 ---
 int currentVolume = 12;
@@ -18,12 +25,73 @@ String currentStreamUrl = "";
 String wifiSSID = "";
 String wifiPass = "";
 
+// ログ用保持変数
+String currentStationName = "";
+String currentArtist = "";
+
 // --- 関数プロトタイプ宣言 ---
 String fetchWorkingStation();
 void updateDisplay();
 void playNewStation();
 void initES8311();
 void inputWiFiConfig();
+void logTrackInfo(String title);
+
+// --- CSVログ保存関数 ---
+void logTrackInfo(String title) {
+    String path = "/playlog.csv";
+    bool fileExists = SD.exists(path);
+
+    File file = SD.open(path, FILE_APPEND);
+    if (!file) {
+        Serial.println("Failed to open log file for appending");
+        return;
+    }
+
+    // 新規作成時はヘッダーを書き込む
+    if (!fileExists) {
+        file.println("timestamp,url,country,station,bit_depth,sample_rate_hz,bit_rate_kbps,artist,title");
+    }
+
+    // タイムスタンプ取得 (UTC)
+    char timeString[30] = "N/A";
+    struct tm timeinfo;
+    if(getLocalTime(&timeinfo)){
+        // ISO 8601形式: 2024-01-18T12:00:00Z
+        strftime(timeString, sizeof(timeString), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
+    }
+
+    // アーティスト名の判定
+    // もし曲名(title)の中に " - " が含まれていて、currentArtistが空なら分割を試みる
+    String finalArtist = currentArtist;
+    String finalTitle = title;
+    if (finalArtist.length() == 0 && title.indexOf(" - ") != -1) {
+        int separatorIndex = title.indexOf(" - ");
+        finalArtist = title.substring(0, separatorIndex);
+        finalTitle = title.substring(separatorIndex + 3);
+    }
+
+    // Audioオブジェクトから現在のスペックを取得
+    int bitDepth = audio.getBitsPerSample();
+    int sampleRate = audio.getSampleRate();
+    int bitRateKbps = audio.getBitRate() / 1000;
+
+    // CSVフォーマットで書き込み
+    file.printf("%s,%s,%s,%s,%d,%d,%d,%s,%s\n", 
+        timeString,
+        currentStreamUrl.c_str(),
+        currentCountry.c_str(),
+        currentStationName.c_str(),
+        bitDepth,
+        sampleRate,
+        bitRateKbps,
+        finalArtist.c_str(),
+        finalTitle.c_str()
+    );
+    
+    file.close();
+    Serial.println("Logged Track: " + finalArtist + " - " + finalTitle);
+}
 
 // --- 簡易テキスト入力UI ---
 String inputString(const char* label, bool isPassword = false) {
@@ -264,9 +332,15 @@ void updateDisplay() {
 
 void playNewStation() {
     audio.stopSong();
+    
+    // 変数リセット
+    currentStationName = "";
+    currentArtist = "";
+
     String url = fetchWorkingStation();
     if (url.length() > 0 && url.startsWith("http")) {
         currentStreamUrl = url;
+        
         M5.Lcd.fillRect(0, 30, 240, 100, BLACK);
         M5.Lcd.setCursor(10, 60);
         M5.Lcd.println("Connecting...");
@@ -319,6 +393,22 @@ void setup() {
     M5.Display.setTextColor(WHITE);
     M5.Display.setTextSize(2);
 
+    // --- SDカード初期化チェック ---
+    SPI.begin(40, 39, 14, 12); // SCK, MISO, MOSI, CS
+    if (!SD.begin(12, SPI, 25000000)) {
+        Serial.println("SD Card mounting failed");
+        M5.Lcd.setTextColor(RED);
+        M5.Lcd.println("SD Card: Failed");
+    } else {
+        Serial.println("SD Card mounted successfully");
+        M5.Lcd.setTextColor(GREEN);
+        M5.Lcd.println("SD Card: OK");
+        
+        uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+        Serial.printf("SD Card Size: %lluMB\n", cardSize);
+    }
+    delay(2000); // 結果を確認するために少し待つ
+
     // 2. I2C & Audio初期化
     Wire.end(); 
     Wire.begin(8, 9); 
@@ -369,6 +459,10 @@ void setup() {
 
     // 5. 接続成功
     M5.Lcd.println("\nWi-Fi Connected!");
+    
+    // 時刻同期開始
+    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+    
     delay(1000);
 
     audio.setPinout(41, 43, 42);
@@ -399,14 +493,38 @@ void loop() {
 // --- Audioコールバック ---
 void audio_info(const char *info) { 
     Serial.print("info: "); Serial.println(info); 
+    
     // ビットレート等の情報が確定したら画面を更新
     if (strstr(info, "BitRate") || strstr(info, "SampleRate")) {
         updateDisplay();
     }
 }
+
 void audio_showstation(const char *info) { 
-    // 国名表示を優先するため、ここでは画面更新しない
     Serial.print("station: "); 
     Serial.println(info); 
+    currentStationName = String(info);
 }
-void audio_eof_mp3(const char *info) { Serial.print("eof_mp3: "); Serial.println(info); playNewStation(); }
+
+void audio_showartist(const char *info) {
+    Serial.print("artist: ");
+    Serial.println(info);
+    currentArtist = String(info);
+}
+
+void audio_showstreamtitle(const char *info) {
+    Serial.print("streamtitle: ");
+    Serial.println(info);
+    
+    // タイトル情報が更新されたらCSVに1行書き込む
+    // 情報が空でない場合のみ
+    String title = String(info);
+    if (title.length() > 0) {
+        logTrackInfo(title);
+    }
+}
+
+void audio_eof_mp3(const char *info) { 
+    Serial.print("eof_mp3: "); Serial.println(info); 
+    playNewStation(); 
+}
