@@ -28,6 +28,9 @@ String wifiPass = "";
 // ログ用保持変数
 String currentStationName = "";
 String currentArtist = "";
+String lastLoggedTitle = "";
+String currentGenre = ""; // 現在のジャンル
+bool isAmpOn = false; // アンプ状態
 
 // --- 関数プロトタイプ宣言 ---
 String fetchWorkingStation();
@@ -109,22 +112,29 @@ String inputString(const char* label, bool isPassword = false) {
     // 前回のキー状態をクリアするために少し待つ
     delay(500); 
 
+    bool needRedraw = true;
+
     while (true) {
         M5Cardputer.update();
         
-        // 入力中の文字列を表示
-        M5.Lcd.fillRect(0, cursorY, 240, 30, BLACK);
-        M5.Lcd.setCursor(cursorX, cursorY);
-        M5.Lcd.setTextColor(WHITE);
-        if (isPassword) {
-            String mask = "";
-            for (int i=0; i<buffer.length(); i++) mask += "*";
-            M5.Lcd.print(mask + "_");
-        } else {
-            M5.Lcd.print(buffer + "_");
+        // 変更があった場合のみ再描画
+        if (needRedraw) {
+            M5.Lcd.fillRect(0, cursorY, 240, 30, BLACK);
+            M5.Lcd.setCursor(cursorX, cursorY);
+            M5.Lcd.setTextColor(WHITE);
+            if (isPassword) {
+                String mask = "";
+                for (int i=0; i<buffer.length(); i++) mask += "*";
+                M5.Lcd.print(mask + "_");
+            } else {
+                M5.Lcd.print(buffer + "_");
+            }
+            needRedraw = false;
         }
 
         if (M5Cardputer.Keyboard.isPressed()) {
+            bool changed = false;
+
             // Enterキーで確定
             if (M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER)) {
                 return buffer;
@@ -133,46 +143,38 @@ String inputString(const char* label, bool isPassword = false) {
             if (M5Cardputer.Keyboard.isKeyPressed(KEY_BACKSPACE)) {
                 if (buffer.length() > 0) {
                     buffer.remove(buffer.length() - 1);
+                    changed = true;
                 }
             }
-            // その他の文字入力
-            // Cardputerライブラリの仕様に合わせ、押されたキーを探す
-            // 英数字、記号などをスキャン
-            // (注: CardputerライブラリのKeyboardは一度に複数のキー状態を持つため、
-            //  本来はキーマップ変換が必要だが、簡易的にアルファベットと数字をチェックする)
             
-            // keysState() は押されているキーのリストを返すが、使い方が複雑なので
-            // ここでは簡易的に実装済みの文字チェックを行うか、
-            // ライブラリのヘルパーがあれば使う。
-            // 残念ながらCardputerライブラリは char 変換を直接提供していない場合があるため、
-            // 愚直だが主要なキーをチェックする。
-            
-            //数字
+            // 数字
             for (char c = '0'; c <= '9'; c++) {
-                if (M5Cardputer.Keyboard.isKeyPressed(c)) buffer += c;
+                if (M5Cardputer.Keyboard.isKeyPressed(c)) { buffer += c; changed = true; }
             }
-            // アルファベット (小文字のみ対応、Shiftは今回は簡易版として無視または別途実装要)
-            // 実用上、パスワードに大文字がある場合はShiftキーのロジックが必要だが、
-            // 今回は小文字+数字+一部記号に限定する。(Shiftキーの実装は複雑になるため)
+            // アルファベット
             for (char c = 'a'; c <= 'z'; c++) {
                 if (M5Cardputer.Keyboard.isKeyPressed(c)) {
-                    // Shiftが押されていれば大文字にする処理を追加
-                    // Cardputerには左Shiftしかないので左のみチェック
                     if (M5Cardputer.Keyboard.isKeyPressed(KEY_LEFT_SHIFT)) {
                         buffer += (char)(c - 32);
                     } else {
                         buffer += c;
                     }
+                    changed = true;
                 }
             }
-            // 記号 (よく使うもの)
-            if (M5Cardputer.Keyboard.isKeyPressed('.')) buffer += ".";
-            if (M5Cardputer.Keyboard.isKeyPressed(',')) buffer += ",";
-            if (M5Cardputer.Keyboard.isKeyPressed('-')) buffer += "-";
-            if (M5Cardputer.Keyboard.isKeyPressed('_')) buffer += "_";
-            if (M5Cardputer.Keyboard.isKeyPressed('@')) buffer += "@";
-            if (M5Cardputer.Keyboard.isKeyPressed('!')) buffer += "!";
+            // 記号
+            if (M5Cardputer.Keyboard.isKeyPressed(' ')) { buffer += " "; changed = true; }
+            if (M5Cardputer.Keyboard.isKeyPressed('.')) { buffer += "."; changed = true; }
+            if (M5Cardputer.Keyboard.isKeyPressed(',')) { buffer += ","; changed = true; }
+            if (M5Cardputer.Keyboard.isKeyPressed('-')) { buffer += "-"; changed = true; }
+            if (M5Cardputer.Keyboard.isKeyPressed('_')) { buffer += "_"; changed = true; }
+            if (M5Cardputer.Keyboard.isKeyPressed('@')) { buffer += "@"; changed = true; }
+            if (M5Cardputer.Keyboard.isKeyPressed('!')) { buffer += "!"; changed = true; }
             
+            if (changed) {
+                needRedraw = true;
+            }
+
             // チャタリング防止
             delay(200);
         }
@@ -208,50 +210,49 @@ String fetchWorkingStation() {
     const char *tags[] = {
         // --- Pop / Rock / Mainstream ---
         "pop", "rock", "indie", "alternative", "classic rock", "hard rock", "metal",
-        "punk", "synthpop", "new wave", "disco", "funk", "soul", "rnb",
+        "punk", "synthpop", "new wave", "disco", "funk", "soul", "rnb", "top40",
+        "glam rock", "grunge", "heavy metal", "psychobilly", "power pop",
         
         // --- Jazz / Classical / Instrumental ---
         "jazz", "classical", "piano", "instrumental", "blues", "smooth jazz", "swing",
-        "soundtrack", "movie", "orchestra", "opera",
+        "soundtrack", "movie", "orchestra", "opera", "baroque", "romantic", "contemporary",
+        "saxophone", "cello", "violin", "guitar", "harp", "organ", "trumpet",
         
         // --- Electronic / Dance / Mood ---
         "lofi", "chillout", "ambient", "electronic", "house", "techno", "trance",
         "dnb", "dubstep", "lounge", "meditation", "sleep", "study", "vaporwave",
+        "deep house", "minimal", "electro", "idm", "synthwave", "dream pop", "darkwave",
+        "spa", "relax", "healing", "nature", "asmr", "yoga", "zen",
         
         // --- Hip Hop / Reggae ---
-        "hiphop", "rap", "trap", "reggae", "dancehall", "ska", "dub",
+        "hiphop", "rap", "trap", "reggae", "dancehall", "ska", "dub", "old school",
         
         // --- Oldies / Decades ---
-        "oldies", "retro", "50s", "60s", "70s", "80s", "90s", "00s",
+        "oldies", "retro", "50s", "60s", "70s", "80s", "90s", "00s", "10s",
         
         // --- World / Regional / Folk ---
-        "folk", "country", "bluegrass", "celtic", "acoustic",
-        "latin", "salsa", "bachata", "reggaeton", "cumbia", "tango", "mariachi", // Latin America
-        "bossa nova", "samba", "mpb", // Brazil
-        "chanson", "french", // France
-        "flamenco", // Spain
-        "bollywood", "indian", // India
-        "kpop", // Korea
-        "jpop", "anime", "city pop", "enka", // Japan
-        "cantopop", // Hong Kong
-        "african", "afrobeat", // Africa
-        "arabic", // Middle East
-        "greek", // Greece
-        "irish", // Ireland
-        "polka", // Europe
+        "folk", "country", "bluegrass", "celtic", "acoustic", "singer songwriter",
+        "latin", "salsa", "bachata", "reggaeton", "cumbia", "tango", "mariachi", "bossanova",
+        "samba", "mpb", "chanson", "french", "flamenco", "bollywood", "indian", "kpop",
+        "jpop", "anime", "citypop", "enka", "vocaloid", "game", "8bit", "chiptune",
+        "african", "afrobeat", "arabic", "greek", "irish", "polka", "chinese", "thai",
+        "brazilian", "nordic", "scandinavian", "medieval", "renaissance",
         
-        // --- Talk / News / Misc ---
-        "news", "talk", "sports", "comedy", "scanner" // Police/Fire scanner (Rare but exists)
+        // --- Misc / Special ---
+        "news", "talk", "sports", "comedy", "christmas", "holiday", "gospel", "spiritual",
+        "workout", "energy", "party", "coffee", "night", "rain"
     };
     int tagCount = sizeof(tags) / sizeof(tags[0]);
     int tagIndex = random(0, tagCount);
     String selectedTag = tags[tagIndex];
-    
+    currentGenre = selectedTag; // グローバル変数に保存
+    currentGenre.toUpperCase(); // 見やすくするために大文字化（お好みで）
+
     M5.Lcd.fillRect(0, 30, 240, 100, BLACK);
     M5.Lcd.setCursor(10, 60);
     M5.Lcd.setTextColor(GREEN);
     M5.Lcd.printf("Genre: %s", selectedTag.c_str());
-    M5.Lcd.setCursor(10, 80);
+    M5.Lcd.setCursor(10, 85);
     M5.Lcd.printf("Finding...");
     
     WiFiClient client;
@@ -270,14 +271,10 @@ String fetchWorkingStation() {
         if (!error && doc.size() > 0) {
             int bitrate = doc[0]["bitrate"].as<int>();
             
-            // ビットレート制限 (SRAMバッファでの安定再生のため、128kbps以下に限定)
-            // 0は不明な場合が多いが、念のため許可するか、あるいは安全側に倒してスキップするか。
-            // ここでは "128超え" を弾くことを主目的とする。
-            if (bitrate > 128) {
-                Serial.printf("Skipping high bitrate station: %d kbps\n", bitrate);
-                // 再帰呼び出しで別の局を探す (再接続コストがかかるが、高ビットレートで音切れするよりマシ)
-                // 無限ループ防止のため、リトライ回数制限などを入れたいところだが、
-                // 簡易的にそのまま再検索へ
+            // ビットレート制限 (128kbps超えを弾く) および 配信停止(0kbps)をスキップ
+            if (bitrate > 128 || bitrate == 0) {
+                Serial.printf("Skipping station: %d kbps (Invalid or High Bitrate)\n", bitrate);
+                // 再帰呼び出しで別の局を探す
                 http.end();
                 return fetchWorkingStation(); 
             }
@@ -299,6 +296,12 @@ void updateDisplay() {
     M5.Lcd.setTextSize(1);
     M5.Lcd.setCursor(5, 5);
     M5.Lcd.printf("Radio ADV | Vol: %d", currentVolume);
+    
+    // バッテリー残量表示 (右上)
+    int bat = M5.Power.getBatteryLevel();
+    M5.Lcd.setCursor(190, 5);
+    M5.Lcd.printf("BAT:%3d%%", bat);
+
     M5.Lcd.fillRect(0, 30, 240, 105, BLACK);
     M5.Lcd.setTextDatum(MC_DATUM);
     M5.Lcd.setTextColor(CYAN);
@@ -326,7 +329,14 @@ void updateDisplay() {
 
     M5.Lcd.setTextColor(YELLOW);
     M5.Lcd.setTextSize(1);
-    M5.Lcd.drawString(audio.isRunning() ? "Playing" : "Stopped", 120, 110); // 位置を少し下に調整
+    
+    // Playingの代わりにジャンルを表示
+    if (audio.isRunning()) {
+        M5.Lcd.drawString("GENRE: " + currentGenre, 120, 110);
+    } else {
+        M5.Lcd.drawString("Stopped", 120, 110);
+    }
+    
     M5.Lcd.setTextDatum(TL_DATUM);
 }
 
@@ -336,6 +346,7 @@ void playNewStation() {
     // 変数リセット
     currentStationName = "";
     currentArtist = "";
+    lastLoggedTitle = "";
 
     String url = fetchWorkingStation();
     if (url.length() > 0 && url.startsWith("http")) {
@@ -344,12 +355,21 @@ void playNewStation() {
         M5.Lcd.fillRect(0, 30, 240, 100, BLACK);
         M5.Lcd.setCursor(10, 60);
         M5.Lcd.println("Connecting...");
+        
         audio.connecttohost(currentStreamUrl.c_str());
         updateDisplay();
     } else {
+        // 取得失敗時の表示
+        M5.Lcd.fillRect(0, 30, 240, 100, BLACK); // 重なり防止のためにエリアをクリア
+        
         M5.Lcd.setCursor(10, 60);
         M5.Lcd.setTextColor(RED);
         M5.Lcd.println("Fetch Failed");
+        
+        M5.Lcd.setCursor(10, 85); // 位置を少し下に
+        M5.Lcd.setTextColor(ORANGE);
+        M5.Lcd.println("Retrying...");
+        
         delay(1000);
         playNewStation();
     }
@@ -381,40 +401,31 @@ void setup() {
     Serial.begin(115200);
 
     // 1. ハードウェア初期化
+    // スピーカーアンプの電源制御(GPIO46)
     pinMode(46, OUTPUT);
-    digitalWrite(46, HIGH);
+    digitalWrite(46, LOW); // まずOFF
     
     auto cfg = M5.config();
-    cfg.external_spk = true;
+    // M5Unifiedのスピーカー制御とAudioライブラリが競合しないように
+    // external_spkの設定は行わない（M5Unifiedにアンプを触らせない）
     M5Cardputer.begin(cfg, true);
     
+    // M5Cardputer.beginで万が一ONにされた可能性も考慮し再度OFF
+    pinMode(46, OUTPUT);
+    digitalWrite(46, LOW);
+
     M5.Display.setRotation(1);
     M5.Display.fillScreen(BLACK);
     M5.Display.setTextColor(WHITE);
     M5.Display.setTextSize(2);
-
-    // --- SDカード初期化チェック ---
-    SPI.begin(40, 39, 14, 12); // SCK, MISO, MOSI, CS
-    if (!SD.begin(12, SPI, 25000000)) {
-        Serial.println("SD Card mounting failed");
-        M5.Lcd.setTextColor(RED);
-        M5.Lcd.println("SD Card: Failed");
-    } else {
-        Serial.println("SD Card mounted successfully");
-        M5.Lcd.setTextColor(GREEN);
-        M5.Lcd.println("SD Card: OK");
-        
-        uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-        Serial.printf("SD Card Size: %lluMB\n", cardSize);
-    }
-    delay(2000); // 結果を確認するために少し待つ
 
     // 2. I2C & Audio初期化
     Wire.end(); 
     Wire.begin(8, 9); 
     delay(100);
     initES8311();
-    M5.Speaker.setVolume(255);
+    // M5.Speaker.setVolume(255); // 削除: Audioライブラリ側で制御するため不要
+
 
     // 3. Wi-Fi設定読み込み
     preferences.begin("rad10-config", false); // "rad10-config"という名前空間を開く
@@ -468,6 +479,10 @@ void setup() {
     audio.setPinout(41, 43, 42);
     audio.setVolume(currentVolume); 
     audio.setConnectionTimeout(5000, 2000); 
+
+    // Audio設定完了後もまだOFFを維持
+    digitalWrite(46, LOW);
+    isAmpOn = false;
     
     playNewStation();
 }
@@ -476,6 +491,36 @@ void loop() {
     M5.update();
     M5Cardputer.update();
     audio.loop();
+
+    // --- 定期的な表示更新 (バッテリー残量など、60秒おき) ---
+    static unsigned long lastDisplayUpdate = 0;
+    if (millis() - lastDisplayUpdate > 60000) {
+        updateDisplay();
+        lastDisplayUpdate = millis();
+    }
+
+    // --- Fn + Backspace (Del) キー長押しでWi-Fi設定リセット ---
+    static unsigned long delPressStartTime = 0;
+    
+    // Fnキー(KEY_FN) と Backspaceキー(KEY_BACKSPACE) が同時に押されているかチェック
+    if (M5Cardputer.Keyboard.isKeyPressed(KEY_FN) && M5Cardputer.Keyboard.isKeyPressed(KEY_BACKSPACE)) {
+        if (delPressStartTime == 0) {
+            delPressStartTime = millis();
+        } else if (millis() - delPressStartTime > 3000) { // 3秒長押し
+            M5.Lcd.fillScreen(RED);
+            M5.Lcd.setTextColor(WHITE);
+            M5.Lcd.setTextDatum(MC_DATUM);
+            M5.Lcd.drawString("Wipe Wi-Fi Config", 120, 60);
+            M5.Lcd.drawString("Rebooting...", 120, 90);
+            
+            // 設定削除
+            preferences.clear();
+            delay(2000);
+            ESP.restart();
+        }
+    } else {
+        delPressStartTime = 0;
+    }
 
     bool volChanged = false;
     if (M5Cardputer.Keyboard.isKeyPressed(',')) { if (currentVolume > 0) currentVolume--; volChanged = true; }
@@ -495,7 +540,13 @@ void audio_info(const char *info) {
     Serial.print("info: "); Serial.println(info); 
     
     // ビットレート等の情報が確定したら画面を更新
+    // また、ここで初めてアンプをONにする（ポップノイズ対策）
     if (strstr(info, "BitRate") || strstr(info, "SampleRate")) {
+        if (!isAmpOn) {
+            digitalWrite(46, HIGH);
+            isAmpOn = true;
+            Serial.println("Speaker Amp Turned ON");
+        }
         updateDisplay();
     }
 }
@@ -517,10 +568,11 @@ void audio_showstreamtitle(const char *info) {
     Serial.println(info);
     
     // タイトル情報が更新されたらCSVに1行書き込む
-    // 情報が空でない場合のみ
+    // 情報が空でなく、かつ直前に記録したものと違う場合のみ
     String title = String(info);
-    if (title.length() > 0) {
+    if (title.length() > 0 && title != lastLoggedTitle) {
         logTrackInfo(title);
+        lastLoggedTitle = title;
     }
 }
 
