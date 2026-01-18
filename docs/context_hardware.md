@@ -1,18 +1,34 @@
 # 開発環境コンテキスト
 
-- デバイス: M5Stack Cardputer ADV (M5StampS3A搭載)
+- デバイス: M5Stack Cardputer (M5StampS3搭載)
 - チップセット: ESP32-S3
 - フレームワーク: Arduino / PlatformIO
-- ライブラリ: M5Cardputer (v1.1.1+), M5Unified (v0.1.16+)
-  - **重要:** `M5Cardputer` ライブラリは "Cardputer ADV" をサポートしていると記述あり。
+- ライブラリ: M5Cardputer (^1.1.1), M5Unified (^0.2.11)
 - 画面解像度: 240x135 (横向き)
-- オーディオ: 
-  - Codec: ES8311 (I2C Addr: 0x18, I2S)
-  - Amp: NS4150B
-  - Mic: PDM Mic (Standard Cardputer compatible?) or Analog via ES8311? (To be verified)
-- センサー:
-  - IMU: BMI270 (I2C Addr: 0x68 or 0x69)
-  - Keyboard: TCA8418 (I2C) or Shift Register (Standard Cardputer uses Shift Register 74HC138. ADV might use TCA8418?) -> `M5Cardputer` source has `TCA8418` driver, implying ADV might use it.
-- 必須設定: `M5Cardputer.begin()` を使用し、ハードウェア初期化を行う。
-- GPIOピン配置:
-  - 現時点では不明確なため、`M5Unified` の自動設定に依存するか、初回起動時に `M5.Speaker.config()` 等からダンプして特定する。
+- ストレージ: microSDカード (SPI接続)
+
+## オーディオサブシステム
+
+- **Codec:** ES8311 (I2C Addr: 0x18)
+  - MCLKはBCLKから内部生成する設定が必要 (Reg 0x01 = 0xB5)。
+  - 初期化は `Wire` ライブラリを用いて手動で行う。
+- **Amp:** NS4150B
+  - **電源制御:** GPIO 46
+  - HIGH = ON, LOW = OFF
+  - ポップノイズ対策のため、起動時はLOWにし、ストリーム情報受信(`audio_info`)後にHIGHにする。
+- **I2S Pinout:**
+  - BCLK: 41
+  - LRCK: 43
+  - DOUT: 42
+
+## 入力デバイス
+
+- **Keyboard:** M5Cardputerライブラリにより抽象化済み。
+  - `M5Cardputer.Keyboard.isKeyPressed(key)` で判定。
+  - 主要キー: `,`(Vol-), `.`(Vol+), `/`(Next), `Fn`+`BS`(Reset Config)
+
+## センサー・その他
+
+- **IMU:** 実装では未使用。
+- **Mic:** 実装では未使用。
+- **Wi-Fi:** `Preferences` ライブラリを使用して SSID/Pass を永続化。
