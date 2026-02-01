@@ -1,6 +1,6 @@
 # 開発環境コンテキスト
 
-- デバイス: M5Stack Cardputer (M5StampS3搭載)
+- デバイス: M5Stack Cardputer Adv (M5StampS3搭載)
 - チップセット: ESP32-S3
 - フレームワーク: Arduino / PlatformIO
 - ライブラリ: M5Cardputer (^1.1.1), M5Unified (^0.2.11)
