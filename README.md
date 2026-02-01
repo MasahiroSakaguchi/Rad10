@@ -10,34 +10,36 @@ Only "The Chaos" brings you encounters with new music and languages.
 
 ## ✨ 特徴 (Features)
 
-*   **The Chaos Engine:**
+* **The Chaos Engine:**
     Radio Browser API を使用し、約100種類のジャンルからランダムに局を選定します。
     Randomly selects a station from about 100 genres using the Radio Browser API.
-*   **Simple Control:**
+* **Simple Control:**
     選局ボタンはありません。気に入らなければスキップボタンを押すか、電源を入れ直すだけです。
     No tuning buttons. If you don't like it, just hit the skip button or restart via power switch.
-*   **Playlog:**
+* **Playlog:**
     受信した楽曲情報（アーティスト、曲名など）をSDカードに自動記録します。
     Automatically logs track information (artist, title, etc.) to the SD card.
-*   **Cardputer Adv Optimized:**
+* **Cardputer Adv Optimized:**
     キーボード操作、ディスプレイ表示、バッテリー管理など、Cardputer Adv に最適化されています。
 
 ## 🛠 ハードウェア (Hardware Requirements)
 
-*   **Device:** M5Stack Cardputer Adv (M5StampS3)
-*   **Storage:** microSD Card (Optional, for logging)
+* **Device:** M5Stack Cardputer Adv (M5StampS3)
+* **Storage:** microSD Card (Optional, for logging)
 
 ## 🚀 インストールとビルド (Installation)
 
 このプロジェクトは [PlatformIO](https://platformio.org/) で開発されています。
 
-1.  このリポジトリをクローンします。
+1. このリポジトリをクローンします。
+
     ```bash
-    git clone https://github.com/YOUR_USERNAME/Rad10.git
+    git clone https://github.com/MasahiroSakaguchi/Rad10
     ```
-2.  VS Code でフォルダを開き、PlatformIO 拡張機能が有効になっていることを確認します。
-3.  依存ライブラリは `platformio.ini` に基づき自動的にダウンロードされます。
-4.  M5Stack Cardputer Adv を接続し、Upload ボタンを押して書き込みます。
+
+2. VS Code でフォルダを開き、PlatformIO 拡張機能が有効になっていることを確認します。
+3. 依存ライブラリは `platformio.ini` に基づき自動的にダウンロードされます。
+4. M5Stack Cardputer Adv を接続し、Upload ボタンを押して書き込みます。
 
 This project is developed with [PlatformIO](https://platformio.org/).
 Clone the repository, open it in VS Code with PlatformIO, and upload it to your M5Stack Cardputer Adv.
